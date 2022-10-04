@@ -362,6 +362,10 @@ func (s *Session) Run() (err error) {
 
 			s.changeState(SuccessfulLogged)
 
+			if s.side == sideAcceptor {
+				s.LogonSettings.TargetCompID, s.LogonSettings.SenderCompID = s.LogonSettings.SenderCompID, s.LogonSettings.TargetCompID
+			}
+
 			s.sendWithErrorCheck(answer)
 			return true
 
