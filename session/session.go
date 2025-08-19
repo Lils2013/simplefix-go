@@ -250,7 +250,22 @@ func (s *Session) setStorageCallbacks() {
 	})
 
 	s.Router.HandleIncoming(simplefixgo.AllMsgTypes, func(msg []byte) bool {
-		if state := s.State(); state != WaitingLogonAnswer && state != WaitingLogon {
+		state := s.State()
+
+		// Check if non-Logon message arrives in invalid state
+		msgType, err := fix.ValueByTag(msg, strconv.Itoa(s.Tags.MsgType))
+		if err != nil {
+			return true
+		}
+		msgTypeStr := string(msgType)
+		// If message is not Logon and state is not in allowed states, disconnect
+		if msgTypeStr != s.MessageBuilders.LogonBuilder.MsgType() &&
+			state != SuccessfulLogged && state != WaitingLogoutAnswer && state != WaitingTestReqAnswer {
+			s.changeState(Disconnect, true)
+			return false
+		}
+
+		if state != WaitingLogonAnswer && state != WaitingLogon {
 			seqNum, err := fix.ValueByTag(msg, strconv.Itoa(s.Tags.MsgSeqNum))
 			if err != nil {
 				return true
@@ -260,19 +275,16 @@ func (s *Session) setStorageCallbacks() {
 				return true
 			}
 
-			msgType, err := fix.ValueByTag(msg, strconv.Itoa(s.Tags.MsgType))
-			if err != nil {
-				return true
-			}
-			msgTypeStr := string(msgType)
 			if s.MessageBuilders.SequenceResetBuilder == nil || msgTypeStr != s.MessageBuilders.SequenceResetBuilder.MsgType() {
 				err = s.counter.SetSeqNum(fix.StorageID{
 					Sender: s.LogonSettings.SenderCompID,
 					Target: s.LogonSettings.TargetCompID,
 					Side:   fix.Incoming,
 				}, seqNumInt)
+				if err != nil {
+					return true
+				}
 			}
-			return err == nil
 		}
 
 		return true
