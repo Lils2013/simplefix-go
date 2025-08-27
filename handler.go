@@ -209,13 +209,19 @@ func (h *DefaultHandler) serve(msg []byte) (err error) {
 	}
 	msgType := string(msgTypeB)
 
-	h.incomingHandlers.Range(AllMsgTypes, func(handle IncomingHandlerFunc) bool {
+	ok := h.incomingHandlers.Range(AllMsgTypes, func(handle IncomingHandlerFunc) bool {
 		return handle(msg)
 	})
+	if !ok {
+		return errors.New("the handler for all message types has refused the message and returned false")
+	}
 
-	h.incomingHandlers.Range(msgType, func(handle IncomingHandlerFunc) bool {
+	ok = h.incomingHandlers.Range(msgType, func(handle IncomingHandlerFunc) bool {
 		return handle(msg)
 	})
+	if !ok {
+		return errors.New("the handler for the current type has refused the message and returned false")
+	}
 
 	return nil
 }

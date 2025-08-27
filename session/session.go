@@ -188,6 +188,7 @@ func newSession(opts *Opts, handler Handler, settings *LogonSettings, cs Counter
 	}
 
 	session.setStorageCallbacks()
+	session.setValidationCallbacks()
 
 	if opts.Location != "" {
 		session.timeLocation, err = time.LoadLocation(opts.Location)
@@ -239,6 +240,26 @@ func (s *Session) checkLogonParams(incoming messages.LogonBuilder) (ok bool, tag
 	return true, 0, 0
 }
 
+func (s *Session) setValidationCallbacks() {
+	s.Router.HandleIncoming(simplefixgo.AllMsgTypes, func(msg []byte) bool {
+		state := s.State()
+
+		// Check if non-Logon message arrives in invalid state
+		msgType, err := fix.ValueByTag(msg, strconv.Itoa(s.Tags.MsgType))
+		if err != nil {
+			return false
+		}
+		msgTypeStr := string(msgType)
+		// If message is not Logon and state is not in allowed states, disconnect
+		if msgTypeStr != s.MessageBuilders.LogonBuilder.MsgType() &&
+			state != SuccessfulLogged && state != WaitingLogoutAnswer && state != WaitingTestReqAnswer {
+			return false
+		}
+
+		return true
+	})
+}
+
 func (s *Session) setStorageCallbacks() {
 	s.Router.HandleOutgoing(simplefixgo.AllMsgTypes, func(msg simplefixgo.SendingMessage) bool {
 		err := s.messageStorage.Save(fix.StorageID{
@@ -250,22 +271,7 @@ func (s *Session) setStorageCallbacks() {
 	})
 
 	s.Router.HandleIncoming(simplefixgo.AllMsgTypes, func(msg []byte) bool {
-		state := s.State()
-
-		// Check if non-Logon message arrives in invalid state
-		msgType, err := fix.ValueByTag(msg, strconv.Itoa(s.Tags.MsgType))
-		if err != nil {
-			return true
-		}
-		msgTypeStr := string(msgType)
-		// If message is not Logon and state is not in allowed states, disconnect
-		if msgTypeStr != s.MessageBuilders.LogonBuilder.MsgType() &&
-			state != SuccessfulLogged && state != WaitingLogoutAnswer && state != WaitingTestReqAnswer {
-			s.changeState(Disconnect, true)
-			return false
-		}
-
-		if state != WaitingLogonAnswer && state != WaitingLogon {
+		if state := s.State(); state != WaitingLogonAnswer && state != WaitingLogon {
 			seqNum, err := fix.ValueByTag(msg, strconv.Itoa(s.Tags.MsgSeqNum))
 			if err != nil {
 				return true
@@ -275,16 +281,19 @@ func (s *Session) setStorageCallbacks() {
 				return true
 			}
 
+			msgType, err := fix.ValueByTag(msg, strconv.Itoa(s.Tags.MsgType))
+			if err != nil {
+				return true
+			}
+			msgTypeStr := string(msgType)
 			if s.MessageBuilders.SequenceResetBuilder == nil || msgTypeStr != s.MessageBuilders.SequenceResetBuilder.MsgType() {
 				err = s.counter.SetSeqNum(fix.StorageID{
 					Sender: s.LogonSettings.SenderCompID,
 					Target: s.LogonSettings.TargetCompID,
 					Side:   fix.Incoming,
 				}, seqNumInt)
-				if err != nil {
-					return true
-				}
 			}
+			return err == nil
 		}
 
 		return true
