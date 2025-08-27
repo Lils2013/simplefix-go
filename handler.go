@@ -240,6 +240,7 @@ func (h *DefaultHandler) Run() (err error) {
 
 			err = h.serve(msg)
 			if err != nil {
+				h.eventHandlers.Trigger(utils.EventDisconnect)
 				return err
 			}
 
