@@ -213,14 +213,14 @@ func (h *DefaultHandler) serve(msg []byte) (err error) {
 		return handle(msg)
 	})
 	if !ok {
-		return errors.New("the handler for all message types has refused the message and returned false")
+		return fmt.Errorf("failed to handle the incoming message, msg: %v", string(msg))
 	}
 
 	ok = h.incomingHandlers.Range(msgType, func(handle IncomingHandlerFunc) bool {
 		return handle(msg)
 	})
 	if !ok {
-		return errors.New("the handler for the current type has refused the message and returned false")
+		return fmt.Errorf("failed to handle the incoming message by tag, msg: %v", string(msg))
 	}
 
 	return nil
